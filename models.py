@@ -126,11 +126,11 @@ class Generator(torch.nn.Module):
 
 class Generator_wav(torch.nn.Module):
     def __init__(self, h):
-        super(Generator, self).__init__()
+        super(Generator_wav, self).__init__()
         self.h = h
         self.num_kernels = len(h.resblock_kernel_sizes)
         self.num_upsamples = len(h.upsample_rates)
-        self.conv_pre = weight_norm(Conv1d(80, h.upsample_initial_channel, 7, 1, padding=3))
+        self.conv_pre = weight_norm(Conv1d(768, h.upsample_initial_channel, 7, 1, padding=3))
         resblock = ResBlock1 if h.resblock == '1' else ResBlock2
 
         self.ups = nn.ModuleList()

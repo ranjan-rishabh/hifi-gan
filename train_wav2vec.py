@@ -14,7 +14,7 @@ from torch.distributed import init_process_group
 from torch.nn.parallel import DistributedDataParallel
 from env import AttrDict, build_env
 from wavdataset import WavDataset, mel_spectrogram, get_dataset_filelist
-from models import Generator, MultiPeriodDiscriminator, MultiScaleDiscriminator, feature_loss, generator_loss,\
+from models import Generator, Generator_wav, MultiPeriodDiscriminator, MultiScaleDiscriminator, feature_loss, generator_loss,\
     discriminator_loss
 from utils import plot_spectrogram, scan_checkpoint, load_checkpoint, save_checkpoint
 
@@ -29,12 +29,11 @@ def train(rank, a, h):
     torch.cuda.manual_seed(h.seed)
     device = torch.device('cuda:{:d}'.format(rank))
 
-    generator = Generator(h).to(device)
+    generator = Generator_wav(h).to(device)
     mpd = MultiPeriodDiscriminator().to(device)
     msd = MultiScaleDiscriminator().to(device)
 
     if rank == 0:
-        print(generator)
         os.makedirs(a.checkpoint_path, exist_ok=True)
         print("checkpoints directory : ", a.checkpoint_path)
 
@@ -83,7 +82,7 @@ def train(rank, a, h):
     train_loader = DataLoader(trainset, num_workers=h.num_workers, shuffle=False,
                               sampler=train_sampler,
                               batch_size=h.batch_size,
-                              pin_memory=True,
+                              pin_memory=False,
                               drop_last=True)
 
     if rank == 0:
@@ -91,10 +90,10 @@ def train(rank, a, h):
                               h.hop_size, h.win_size, h.sampling_rate, h.fmin, h.fmax, False, False, n_cache_reuse=0,
                               fmax_loss=h.fmax_for_loss, device=device, fine_tuning=a.fine_tuning,
                               base_mels_path=a.input_mels_dir)
-        validation_loader = DataLoader(validset, num_workers=1, shuffle=False,
+        validation_loader = DataLoader(validset, num_workers=0, shuffle=False,
                                        sampler=None,
                                        batch_size=1,
-                                       pin_memory=True,
+                                       pin_memory=False,
                                        drop_last=True)
 
         sw = SummaryWriter(os.path.join(a.checkpoint_path, 'logs'))
@@ -110,18 +109,21 @@ def train(rank, a, h):
         if h.num_gpus > 1:
             train_sampler.set_epoch(epoch)
 
-        print(len(train_loader))
         for i, batch in enumerate(train_loader):
-            print('here')
             if rank == 0:
                 start_b = time.time()
             x, y, _, y_mel = batch
             x = torch.autograd.Variable(x.to(device, non_blocking=True))
+            print("wav2vec:", x.size())
             y = torch.autograd.Variable(y.to(device, non_blocking=True))
+            print("audio:", y.size())
             y_mel = torch.autograd.Variable(y_mel.to(device, non_blocking=True))
+            print("mel:", y_mel.size())
             y = y.unsqueeze(1)
 
             y_g_hat = generator(x)
+            print("generator:", y_g_hat.size())
+            
             y_g_hat_mel = mel_spectrogram(y_g_hat.squeeze(1), h.n_fft, h.num_mels, h.sampling_rate, h.hop_size, h.win_size,
                                           h.fmin, h.fmax_for_loss)
 
@@ -158,7 +160,7 @@ def train(rank, a, h):
             optim_g.step()
 
             if rank == 0:
-                print(steps)
+                # print(steps)
                 # STDOUT logging
                 if steps % a.stdout_interval == 0:
                     with torch.no_grad():
@@ -239,7 +241,7 @@ def main():
     parser.add_argument('--input_validation_file', default='train_files/validation.txt')
     parser.add_argument('--checkpoint_path', default='cp_hifigan')
     parser.add_argument('--config', default='')
-    parser.add_argument('--training_epochs', default=31, type=int)
+    parser.add_argument('--training_epochs', default=3, type=int)
     parser.add_argument('--stdout_interval', default=5, type=int)
     parser.add_argument('--checkpoint_interval', default=5000, type=int)
     parser.add_argument('--summary_interval', default=100, type=int)
@@ -264,10 +266,12 @@ def main():
     else:
         pass
 
-    if h.num_gpus > 1:
-        mp.spawn(train, nprocs=h.num_gpus, args=(a, h,))
-    else:
-        train(0, a, h)
+    train(0, a, h)
+
+    # if h.num_gpus > 1:
+    #     mp.spawn(train, nprocs=h.num_gpus, args=(a, h,))
+    # else:
+    #     train(0, a, h)
 
 
 if __name__ == '__main__':
