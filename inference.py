@@ -8,7 +8,8 @@ import torch
 from scipy.io.wavfile import write
 from env import AttrDict
 from meldataset import mel_spectrogram, MAX_WAV_VALUE, load_wav
-from models import Generator
+from wavdataset import get_wav2vec2
+from models import Generator_wav
 
 h = None
 device = None
@@ -35,7 +36,7 @@ def scan_checkpoint(cp_dir, prefix):
 
 
 def inference(a):
-    generator = Generator(h).to(device)
+    generator = Generator_wav(h).to(device)
 
     state_dict_g = load_checkpoint(a.checkpoint_file, device)
     generator.load_state_dict(state_dict_g['generator'])
@@ -51,7 +52,7 @@ def inference(a):
             wav, sr = load_wav(os.path.join(a.input_wavs_dir, filname))
             wav = wav / MAX_WAV_VALUE
             wav = torch.FloatTensor(wav).to(device)
-            x = get_mel(wav.unsqueeze(0))
+            x = get_wav2vec2(wav.unsqueeze(0), sr, device)
             y_g_hat = generator(x)
             audio = y_g_hat.squeeze()
             audio = audio * MAX_WAV_VALUE

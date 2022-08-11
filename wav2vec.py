@@ -18,7 +18,7 @@ print(model.__class__)
 
 import os
 
-input_training_file = 'LJSpeech-1.1/training.txt'
+input_training_file = 'LJSpeech-1.1/validation.txt'
 input_wavs_dir = 'LJSpeech-1.1/wavs'
 with open(input_training_file, 'r', encoding='utf-8') as fi:
         training_files = [os.path.join(input_wavs_dir, x.split('|')[0] + '.wav')
@@ -44,3 +44,14 @@ for file in training_files:
 
     torch.save(res, output_file)
     print(res.size())
+
+def get_wav2vec(waveform, sampling_rate, device):
+    bundle = torchaudio.pipelines.WAV2VEC2_BASE
+    model = bundle.get_model().to(device)
+
+    if sampling_rate != bundle.sample_rate:
+        waveform = torchaudio.functional.resample(waveform, sampling_rate, bundle.sample_rate)
+
+    res, _ = model(waveform)
+
+    return res

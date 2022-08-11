@@ -1,4 +1,7 @@
 __pycache__
 wav2vec
 cp_hifigan
+LJSpeech/LJSpeech-1.1/wavs
 LJSpeech-1.1/wavs
+train_files/wavs
+test_files

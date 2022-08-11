@@ -47,6 +47,18 @@ def spectral_de_normalize_torch(magnitudes):
 mel_basis = {}
 hann_window = {}
 
+def get_wav2vec2(waveform, sampling_rate, device):
+    bundle = torchaudio.pipelines.WAV2VEC2_BASE
+    model = bundle.get_model().to(device)
+
+    if sampling_rate != bundle.sample_rate:
+        waveform = torchaudio.functional.resample(waveform, sampling_rate, bundle.sample_rate)
+
+    res, _ = model(waveform)
+
+    res = torch.transpose(res.squeeze(), 0, 1).unsqueeze(0)
+
+    return res
 
 def mel_spectrogram(y, n_fft, num_mels, sampling_rate, hop_size, win_size, fmin, fmax, center=False):
     if torch.min(y) < -1.:
@@ -80,9 +92,9 @@ def get_wav2vec(filename):
 
     res = torch.load(file)
 
-    res = res.squeeze()
-    res = torch.transpose(res, 0, 1)
-    res = res.unsqueeze(0)
+    res = torch.transpose(res.squeeze(), 0, 1).unsqueeze(0)
+    #res = torch.transpose(res, 0, 1)
+    #res = res.unsqueeze(0)
 
     return res
 
@@ -132,21 +144,23 @@ class WavDataset(torch.utils.data.Dataset):
                 audio = normalize(audio) * 0.95 #don't send normalized audio to wav2bvec
             self.cached_wav = audio
             if sampling_rate != self.sampling_rate:
-                raise ValueError("{} SR doesn't match target {} SR".format(
-                    sampling_rate, self.sampling_rate))
+                #raise ValueError("{} SR doesn't match target {} SR".format(
+                    #sampling_rate, self.sampling_rate))
+                audio = torch.FloatTensor(audio)
+                audio = torchaudio.functional.resample(audio, sampling_rate, self.sampling_rate)
             self._cache_ref_count = self.n_cache_reuse
         else:
             audio = self.cached_wav
             self._cache_ref_count -= 1
 
-        audio = torch.FloatTensor(audio)
+        #audio = torch.FloatTensor(audio)
         audio = audio.unsqueeze(0)
 
-        mel_o = mel_spectrogram(audio, self.n_fft, self.num_mels,
-                                   self.sampling_rate, self.hop_size, self.win_size, self.fmin, self.fmax_loss,
-                                   center=False)
-        
-        print(mel_o.size())
+        #mel_o = mel_spectrogram(audio, self.n_fft, self.num_mels,
+        #                           self.sampling_rate, self.hop_size, self.win_size, self.fmin, self.fmax_loss,
+        #                           center=False)
+
+        #print(mel_o.size())
 
         # if not self.fine_tuning:
         #     if self.split:
@@ -165,7 +179,7 @@ class WavDataset(torch.utils.data.Dataset):
         if len(wav2vec.shape) < 3:
             wav2vec = wav2vec.unsqueeze(0)
 
-        print(wav2vec.size())
+        #print(wav2vec.size())
 
         if self.split:
             frames_per_seg = math.ceil(self.segment_size / self.hop_size)
