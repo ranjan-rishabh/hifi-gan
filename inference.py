@@ -1,4 +1,5 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
+from fileinput import filename
 
 import glob
 import os
@@ -7,8 +8,8 @@ import json
 import torch
 from scipy.io.wavfile import write
 from env import AttrDict
-from meldataset import mel_spectrogram, MAX_WAV_VALUE, load_wav
-from wavdataset import get_wav2vec2
+from meldataset import mel_spectrogram, MAX_WAV_VALUE
+from wavdataset import get_concat_ssl, get_wav2vec, get_wav2vec2, load_wav
 from models import Generator_wav
 
 h = None
@@ -62,12 +63,42 @@ def inference(a):
             write(output_file, h.sampling_rate, audio)
             print(output_file)
 
+def inference_custom(a):
+    generator = Generator_wav(h).to(device)
+
+    state_dict_g = load_checkpoint(a.checkpoint_file, device)
+    generator.load_state_dict(state_dict_g['generator'])
+
+    filelist = os.listdir(a.input_wavs_dir)
+
+    os.makedirs(a.output_dir, exist_ok=True)
+
+    generator.eval()
+    generator.remove_weight_norm()
+    with torch.no_grad():
+        for i, filename in enumerate(filelist):
+            # wav, sr = load_wav(os.path.join(a.input_wavs_dir, filname))
+            # wav = wav / MAX_WAV_VALUE
+            # wav = torch.FloatTensor(wav).to(device)
+            # x = get_wav2vec(filename)
+            x = get_concat_ssl(filename, 'Concat_ssl_2')
+            # x = torch.load(os.path.join(a.input_wavs_dir, filename))
+            # x = torch.transpose(x.squeeze(), 0, 1).unsqueeze(0)
+            y_g_hat = generator(x)
+            audio = y_g_hat.squeeze()
+            audio = audio * MAX_WAV_VALUE
+            audio = audio.cpu().numpy().astype('int16')
+
+            output_file = os.path.join(a.output_dir, os.path.splitext(filename)[0] + '_generated.wav')
+            write(output_file, h.sampling_rate, audio)
+            print(output_file)
+
 
 def main():
     print('Initializing Inference Process..')
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input_wavs_dir', default='test_files')
+    parser.add_argument('--input_wavs_dir', default='test_files_C')
     parser.add_argument('--output_dir', default='generated_files')
     parser.add_argument('--checkpoint_file', required=True)
     a = parser.parse_args()
@@ -88,9 +119,8 @@ def main():
     else:
         device = torch.device('cpu')
 
-    inference(a)
+    inference_custom(a)
 
 
 if __name__ == '__main__':
     main()
-

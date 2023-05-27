@@ -191,11 +191,16 @@ def train(rank, a, h):
                     with torch.no_grad():
                         for j, batch in enumerate(validation_loader):
                             x, y, _, y_mel = batch
+                            print("waveform: ", x.size())
+                            print("audio: ", y.size())
                             y_g_hat = generator(x.to(device))
+                            print("generator: ", y_g_hat.size())
                             y_mel = torch.autograd.Variable(y_mel.to(device, non_blocking=True))
+                            print("mel_loss: ", y_mel.size())
                             y_g_hat_mel = mel_spectrogram(y_g_hat.squeeze(1), h.n_fft, h.num_mels, h.sampling_rate,
                                                           h.hop_size, h.win_size,
                                                           h.fmin, h.fmax_for_loss)
+                            print("gen_mel: ", y_g_hat_mel.size())
                             val_err_tot += F.l1_loss(y_mel, y_g_hat_mel).item()
 
                             if j <= 4:
@@ -232,11 +237,11 @@ def main():
     parser.add_argument('--group_name', default=None)
     parser.add_argument('--input_wavs_dir', default='LJSpeech-1.1/wavs')
     parser.add_argument('--input_mels_dir', default='ft_dataset')
-    parser.add_argument('--input_training_file', default='LJSpeech-1.1/training.txt')
-    parser.add_argument('--input_validation_file', default='LJSpeech-1.1/validation.txt')
+    parser.add_argument('--input_training_file', default='train_files/training.txt')
+    parser.add_argument('--input_validation_file', default='train_files/validation.txt')
     parser.add_argument('--checkpoint_path', default='cp_hifigan')
     parser.add_argument('--config', default='')
-    parser.add_argument('--training_epochs', default=3100, type=int)
+    parser.add_argument('--training_epochs', default=3, type=int)
     parser.add_argument('--stdout_interval', default=5, type=int)
     parser.add_argument('--checkpoint_interval', default=5000, type=int)
     parser.add_argument('--summary_interval', default=100, type=int)

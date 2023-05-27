@@ -14,8 +14,9 @@ MAX_WAV_VALUE = 32768.0
 
 
 def load_wav(full_path):
-    sampling_rate, data = read(full_path)
-    return data, sampling_rate
+    return torchaudio.load(full_path)
+    # sampling_rate, data = read(full_path)
+    # return data, sampling_rate
 
 
 def dynamic_range_compression(x, C=1, clip_val=1e-5):
@@ -86,15 +87,19 @@ def mel_spectrogram(y, n_fft, num_mels, sampling_rate, hop_size, win_size, fmin,
     return spec
 
 def get_wav2vec(filename):
-    output_dir = 'wav2vec'
-    
+    output_dir = 'Concat_ssl_LJ'
     file = os.path.join(output_dir, os.path.splitext(os.path.split(filename)[-1])[0] + '.pt')
-
     res = torch.load(file)
-
     res = torch.transpose(res.squeeze(), 0, 1).unsqueeze(0)
-    #res = torch.transpose(res, 0, 1)
-    #res = res.unsqueeze(0)
+
+    return res
+
+def get_concat_ssl(filename, input_dir):
+    speaker_id, chapter_id, utterance_id = os.path.splitext(os.path.split(filename)[-1])[0].split("-")
+    filename = f"{(int)(speaker_id)}-{(int)(chapter_id)}-{(int)(utterance_id)}"
+    file = os.path.join(input_dir, filename + '.pt')
+    res = torch.load(file)
+    res = torch.transpose(res.squeeze(), 0, 1).unsqueeze(0)
 
     return res
 
@@ -107,6 +112,28 @@ def get_dataset_filelist(a):
     with open(a.input_validation_file, 'r', encoding='utf-8') as fi:
         validation_files = [os.path.join(a.input_wavs_dir, x.split('|')[0] + '.wav')
                             for x in fi.read().split('\n') if len(x) > 0]
+    return training_files, validation_files
+
+def get_dataset_filelist_libri(a):
+    ext_audio = '.flac'
+    with open(a.input_training_file, 'r', encoding='utf-8') as fi:
+        training_files = []
+        for f in fi:
+            speaker_id, chapter_id, utterance_id = f.strip().split("-")
+            fileid_audio = f"{speaker_id}-{chapter_id}-{utterance_id}"
+            file_audio = fileid_audio + ext_audio
+            file_audio = os.path.join(a.input_wavs_dir, speaker_id, chapter_id, file_audio)
+            training_files.append(file_audio)
+
+    with open(a.input_validation_file, 'r', encoding='utf-8') as fi:
+        validation_files = []
+        for f in fi:
+            speaker_id, chapter_id, utterance_id = f.strip().split("-")
+            fileid_audio = f"{speaker_id}-{chapter_id}-{utterance_id}"
+            file_audio = fileid_audio + ext_audio
+            file_audio = os.path.join(a.input_wavs_dir, speaker_id, chapter_id, file_audio)
+            validation_files.append(file_audio)
+
     return training_files, validation_files
 
 
@@ -139,13 +166,11 @@ class WavDataset(torch.utils.data.Dataset):
         filename = self.audio_files[index]
         if self._cache_ref_count == 0:
             audio, sampling_rate = load_wav(filename)
-            audio = audio / MAX_WAV_VALUE
-            if not self.fine_tuning:
-                audio = normalize(audio) * 0.95 #don't send normalized audio to wav2bvec
+            # audio = audio / MAX_WAV_VALUE
+            # if not self.fine_tuning:
+            #     audio = normalize(audio) * 0.95
             self.cached_wav = audio
             if sampling_rate != self.sampling_rate:
-                #raise ValueError("{} SR doesn't match target {} SR".format(
-                    #sampling_rate, self.sampling_rate))
                 audio = torch.FloatTensor(audio)
                 audio = torchaudio.functional.resample(audio, sampling_rate, self.sampling_rate)
             self._cache_ref_count = self.n_cache_reuse
@@ -153,50 +178,30 @@ class WavDataset(torch.utils.data.Dataset):
             audio = self.cached_wav
             self._cache_ref_count -= 1
 
-        #audio = torch.FloatTensor(audio)
-        audio = audio.unsqueeze(0)
+        # audio = audio.unsqueeze(0)
 
-        #mel_o = mel_spectrogram(audio, self.n_fft, self.num_mels,
-        #                           self.sampling_rate, self.hop_size, self.win_size, self.fmin, self.fmax_loss,
-        #                           center=False)
+        # ssl = get_wav2vec(filename)
+        ssl = get_concat_ssl(filename, 'Concat_ssl_2')
 
-        #print(mel_o.size())
-
-        # if not self.fine_tuning:
-        #     if self.split:
-        #         if audio.size(1) >= self.segment_size:
-        #             max_audio_start = audio.size(1) - self.segment_size
-        #             audio_start = random.randint(0, max_audio_start)
-        #             audio = audio[:, audio_start:audio_start+self.segment_size]
-        #         else:
-        #             audio = torch.nn.functional.pad(audio, (0, self.segment_size - audio.size(1)), 'constant')
-
-        #     wav2vec = get_wav2vec(filename)
-
-        # else:
-        wav2vec = get_wav2vec(filename)
-
-        if len(wav2vec.shape) < 3:
-            wav2vec = wav2vec.unsqueeze(0)
-
-        #print(wav2vec.size())
+        if len(ssl.shape) < 3:
+            ssl = ssl.unsqueeze(0)
 
         if self.split:
             frames_per_seg = math.ceil(self.segment_size / self.hop_size)
 
             if audio.size(1) >= self.segment_size:
-                wav2vec_start = random.randint(0, wav2vec.size(2) - frames_per_seg - 1)
-                wav2vec = wav2vec[:, :, wav2vec_start:wav2vec_start + frames_per_seg]
-                audio = audio[:, wav2vec_start * self.hop_size:(wav2vec_start + frames_per_seg) * self.hop_size]
+                ssl_start = random.randint(0, ssl.size(2) - frames_per_seg - 1)
+                ssl = ssl[:, :, ssl_start:ssl_start + frames_per_seg]
+                audio = audio[:, ssl_start * self.hop_size:(ssl_start + frames_per_seg) * self.hop_size]
             else:
-                wav2vec = torch.nn.functional.pad(wav2vec, (0, frames_per_seg - wav2vec.size(2)), 'constant')
+                ssl = torch.nn.functional.pad(ssl, (0, frames_per_seg - ssl.size(2)), 'constant')
                 audio = torch.nn.functional.pad(audio, (0, self.segment_size - audio.size(1)), 'constant')
 
         mel_loss = mel_spectrogram(audio, self.n_fft, self.num_mels,
                                    self.sampling_rate, self.hop_size, self.win_size, self.fmin, self.fmax_loss,
                                    center=False)
 
-        return (wav2vec.squeeze(), audio.squeeze(0), filename, mel_loss.squeeze())
+        return (ssl.squeeze(), audio.squeeze(0), filename, mel_loss.squeeze())
 
     def __len__(self):
         return len(self.audio_files)
