@@ -14,3 +14,10 @@ Concat_ssl*/
 LibriSpeech_o*/
 LJSpeech*
 generated_files*/**
+wav2vec*/**
+old generated*/**
+test_concat_pt/**
+test_files_C*/**
+test_files_c_LJ*/**
+Nvidia-out*/**
+Post-controlled*/**
