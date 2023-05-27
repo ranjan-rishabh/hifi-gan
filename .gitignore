@@ -13,3 +13,4 @@ Speaker_embeddings*/
 Concat_ssl*/
 LibriSpeech_o*/
 LJSpeech*
+generated_files*/**
